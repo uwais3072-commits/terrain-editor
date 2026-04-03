@@ -1,0 +1,1963 @@
+-- ╔══════════════════════════════════════════════════════════════════╗
+-- ║  TERRAIN EDITOR - LEBARAN MAROON  [FULL / 1 FILE]              ║
+-- ║  by Uwais  |  Delta Executor Version                           ║
+-- ║  Execute 1 file ini saja di Delta, langsung jalan!             ║
+-- ╚══════════════════════════════════════════════════════════════════╝
+
+-- ╔══════════════════════════════════════════════════════════════════╗
+-- ║  TERRAIN EDITOR - LEBARAN MAROON  [PART 1 / 2]                 ║
+-- ║  by Uwais  |  Delta Executor Version                           ║
+-- ║  Jalankan PART 1 dulu lewat Delta, baru PART 2!                ║
+-- ╚══════════════════════════════════════════════════════════════════╝
+
+-- Delta executor: pakai getgenv() agar variable bisa diakses Part 2
+local env = getgenv()
+
+local Players       = game:GetService("Players")
+local RunService    = game:GetService("RunService")
+local TweenService  = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Terrain       = workspace.Terrain
+
+local player  = Players.LocalPlayer
+local mouse   = player:GetMouse()
+local camera  = workspace.CurrentCamera
+
+-- ═══════════════════════════════════════════════════════════════
+-- ⚙️ POSISI UI
+-- ═══════════════════════════════════════════════════════════════
+
+local UI_LOGO_Y  = 8
+local UI_PANEL_Y = 72
+
+-- ═══════════════════════════════════════════════════════════════
+-- SETTINGS & VARIABLES
+-- ═══════════════════════════════════════════════════════════════
+
+local selectedMaterial   = Enum.Material.Grass
+local brushSize          = 4
+local isPlacing          = false
+local terrainEnabled     = true  -- Delta: langsung aktif tanpa perlu play mode
+local terrainLog         = {}
+local deleteMode         = false
+local lastPlacementTime  = 0
+local PLACEMENT_COOLDOWN = 0.1
+local undoHistory        = {}
+local redoHistory        = {}
+local MAX_HISTORY        = 20
+local selectedShape      = "free"
+local selectedTerrainShape = "block"
+local terrainHeight      = 4
+local terrainWidth       = 4
+local flattenActive      = false
+local flattenYSet        = false
+local flattenY           = 0
+local smoothActive       = false
+local smoothStrength     = 2
+
+-- ═══════════════════════════════════════════════════════════════
+-- 🎨 TEMA LEBARAN MAROON
+-- ═══════════════════════════════════════════════════════════════
+
+local C = {
+    -- Background maroon gelap
+    bg_deep     = Color3.fromRGB(18,  6,  8),
+    bg_panel    = Color3.fromRGB(28, 10, 12),
+    bg_card     = Color3.fromRGB(40, 14, 18),
+    bg_elevated = Color3.fromRGB(55, 20, 25),
+    -- Border
+    border      = Color3.fromRGB(90, 30, 38),
+    border_glow = Color3.fromRGB(150, 50, 65),
+    -- Accent gold lebaran
+    gold        = Color3.fromRGB(212, 175,  55),  -- gold klasik
+    gold_bright = Color3.fromRGB(255, 215,  80),  -- gold terang
+    gold_dim    = Color3.fromRGB(140, 110,  30),  -- gold redup
+    -- Maroon accent
+    maroon      = Color3.fromRGB(176,  48,  60),  -- maroon utama
+    maroon_bright = Color3.fromRGB(220,  70,  85), -- maroon terang
+    maroon_dark = Color3.fromRGB(100,  25,  32),  -- maroon gelap
+    -- Putih krem (warna baju lebaran)
+    cream       = Color3.fromRGB(255, 248, 230),  -- krem putih
+    cream_dim   = Color3.fromRGB(200, 185, 160),  -- krem redup
+    -- Text
+    text_bright = Color3.fromRGB(255, 245, 220),
+    text_mid    = Color3.fromRGB(200, 165, 130),
+    text_dim    = Color3.fromRGB(120,  85,  75),
+    white       = Color3.new(1, 1, 1),
+}
+
+-- ═══════════════════════════════════════════════════════════════
+-- EXTERNAL CONTROL
+-- ═══════════════════════════════════════════════════════════════
+
+env.ToggleTerrain = function(state) terrainEnabled = state return terrainEnabled end
+env.GetTerrainStatus = function() return terrainEnabled end
+
+-- ═══════════════════════════════════════════════════════════════
+-- MATERIAL DATA
+-- ═══════════════════════════════════════════════════════════════
+
+local materials = {
+    {name="Grass",     enum=Enum.Material.Grass,     color=Color3.fromRGB(72,160,64),   icon="🌿"},
+    {name="Water",     enum=Enum.Material.Water,     color=Color3.fromRGB(30,120,200),  icon="💧"},
+    {name="Rock",      enum=Enum.Material.Rock,      color=Color3.fromRGB(90,95,100),   icon="🪨"},
+    {name="Sand",      enum=Enum.Material.Sand,      color=Color3.fromRGB(200,175,110), icon="🏖"},
+    {name="Snow",      enum=Enum.Material.Snow,      color=Color3.fromRGB(210,235,255), icon="❄"},
+    {name="Ice",       enum=Enum.Material.Ice,       color=Color3.fromRGB(140,210,230), icon="🧊"},
+    {name="Mud",       enum=Enum.Material.Mud,       color=Color3.fromRGB(80,55,40),    icon="🟤"},
+    {name="Ground",    enum=Enum.Material.Ground,    color=Color3.fromRGB(90,80,50),    icon="🌍"},
+    {name="Basalt",    enum=Enum.Material.Basalt,    color=Color3.fromRGB(45,44,50),    icon="⚫"},
+    {name="Sandstone", enum=Enum.Material.Sandstone, color=Color3.fromRGB(160,130,90),  icon="🟨"},
+    {name="Slate",     enum=Enum.Material.Slate,     color=Color3.fromRGB(55,62,72),    icon="⬛"},
+    {name="Concrete",  enum=Enum.Material.Concrete,  color=Color3.fromRGB(115,115,115), icon="🏗"},
+}
+
+-- ═══════════════════════════════════════════════════════════════
+-- HELPER FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════
+
+local function logTerrain(pos, mat, size, shape)
+    local k = string.format("%.1f_%.1f_%.1f", pos.X, pos.Y, pos.Z)
+    terrainLog[k] = {position=pos, material=mat, size=size, shape=shape or "block"}
+end
+
+local function removeFromLog(pos)
+    local k = string.format("%.1f_%.1f_%.1f", pos.X, pos.Y, pos.Z)
+    terrainLog[k] = nil
+end
+
+local function addToHistory(action)
+    table.insert(undoHistory, action)
+    if #undoHistory > MAX_HISTORY then table.remove(undoHistory, 1) end
+    redoHistory = {}
+end
+
+local function performUndo()
+    if #undoHistory == 0 then return false end
+    local a = table.remove(undoHistory)
+    table.insert(redoHistory, a)
+    if a.type == "place" then
+        Terrain:FillBlock(CFrame.new(a.position), Vector3.new(a.size,a.size,a.size), Enum.Material.Air)
+        removeFromLog(a.position)
+    elseif a.type == "delete" then
+        Terrain:FillBlock(CFrame.new(a.position), Vector3.new(a.size,a.size,a.size), a.material)
+        logTerrain(a.position, a.material, a.size)
+    end
+    return true
+end
+
+local function performRedo()
+    if #redoHistory == 0 then return false end
+    local a = table.remove(redoHistory)
+    table.insert(undoHistory, a)
+    if a.type == "place" then
+        Terrain:FillBlock(CFrame.new(a.position), Vector3.new(a.size,a.size,a.size), a.material)
+        logTerrain(a.position, a.material, a.size)
+    elseif a.type == "delete" then
+        Terrain:FillBlock(CFrame.new(a.position), Vector3.new(a.size,a.size,a.size), Enum.Material.Air)
+        removeFromLog(a.position)
+    end
+    return true
+end
+
+local function generateTerrainScript()
+    local total = 0
+    for _ in pairs(terrainLog) do total = total + 1 end
+    if total == 0 then return "-- No terrain\nprint('No blocks')" end
+    local dataLines = {}
+    for _, block in pairs(terrainLog) do
+        local p = block.position
+        local mat = tostring(block.material):gsub("Enum.Material.", "")
+        local sh = block.shape or "block"
+        table.insert(dataLines, string.format("{%d,%d,%d,'%s',%d,'%s'}",
+            math.floor(p.X), math.floor(p.Y), math.floor(p.Z), mat, block.size, sh))
+    end
+    local dataStr = table.concat(dataLines, ",")
+    local loader = "-- Terrain by Uwais | " .. total .. " blocks\n"
+        .. "local T=workspace.Terrain\n"
+        .. "local D={" .. dataStr .. "}\n"
+        .. "local M=Enum.Material\n"
+        .. "for i,d in ipairs(D) do\n"
+        .. "local p=Vector3.new(d[1],d[2],d[3])\n"
+        .. "local m=M[d[4]]\nlocal s=d[5]\nlocal sh=d[6]\n"
+        .. "if sh=='ball' then T:FillBall(p,s/2,m)\n"
+        .. "elseif sh=='cylinder' then T:FillCylinder(CFrame.new(p),s/2,s,m)\n"
+        .. "elseif sh=='wedge' then T:FillWedge(CFrame.new(p),Vector3.new(s,s,s),m)\n"
+        .. "else T:FillBlock(CFrame.new(p),Vector3.new(s,s,s),m) end\n"
+        .. "if i%20==0 then task.wait() end\n"
+        .. "end\nprint('Loaded '..#D..' blocks')"
+    if #loader >= 195000 then
+        return "-- Terlalu banyak block! Hapus sebagian dulu."
+    end
+    return loader
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- BRUSH INDICATOR
+-- ═══════════════════════════════════════════════════════════════
+
+-- Hapus brush lama kalau ada (Delta re-execute)
+local oldBrush = workspace:FindFirstChild("BrushIndicator")
+if oldBrush then oldBrush:Destroy() end
+
+local brushIndicator = Instance.new("Part")
+brushIndicator.Name = "BrushIndicator"
+brushIndicator.Anchored = true
+brushIndicator.CanCollide = false
+brushIndicator.Transparency = 1
+brushIndicator.Material = Enum.Material.Neon
+brushIndicator.Color = C.gold
+brushIndicator.Size = Vector3.new(4,0.5,4)
+brushIndicator.Parent = workspace
+
+local selBox = Instance.new("SelectionBox")
+selBox.Color3 = C.gold
+selBox.LineThickness = 0.04
+selBox.Transparency = 0.4
+selBox.SurfaceTransparency = 0.85
+selBox.SurfaceColor3 = C.gold
+selBox.Adornee = brushIndicator
+selBox.Parent = workspace
+
+-- BLUR
+local oldBlur = game.Lighting:FindFirstChild("TerrainBlur")
+if oldBlur then oldBlur:Destroy() end
+local blurFx = Instance.new("BlurEffect")
+blurFx.Name = "TerrainBlur"
+blurFx.Size = 0
+blurFx.Parent = game.Lighting
+
+-- ═══════════════════════════════════════════════════════════════
+-- INPUT - Delta pakai UserInputService lebih reliable
+-- ═══════════════════════════════════════════════════════════════
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        if terrainEnabled then isPlacing = true end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        isPlacing = false
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- RENDER STEPPED - brush indicator
+-- ═══════════════════════════════════════════════════════════════
+
+RunService.RenderStepped:Connect(function()
+    if not terrainEnabled then
+        brushIndicator.Transparency = 1
+        selBox.Transparency = 1
+        return
+    end
+    local ray = camera:ScreenPointToRay(mouse.X, mouse.Y)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {player.Character, brushIndicator}
+    local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+    if result then
+        local hp = result.Position
+        local sp = Vector3.new(
+            math.floor(hp.X/4)*4+2,
+            math.floor(hp.Y/4)*4,
+            math.floor(hp.Z/4)*4+2
+        )
+        brushIndicator.Position = sp
+        brushIndicator.Size = Vector3.new(
+            terrainWidth*4,
+            math.max(terrainHeight*4*0.3, 0.5),
+            terrainWidth*4
+        )
+        brushIndicator.Transparency = 0.8
+        local col = deleteMode and C.maroon_bright or C.gold
+        brushIndicator.Color = col
+        selBox.Color3 = col
+        selBox.SurfaceColor3 = col
+        selBox.Transparency = 0.5
+    else
+        brushIndicator.Transparency = 1
+        selBox.Transparency = 1
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- HEARTBEAT - terrain placement
+-- ═══════════════════════════════════════════════════════════════
+
+RunService.Heartbeat:Connect(function()
+    if not terrainEnabled or not isPlacing or brushIndicator.Transparency >= 1 then return end
+    local now = tick()
+    if now - lastPlacementTime < PLACEMENT_COOLDOWN then return end
+    lastPlacementTime = now
+
+    local pos = brushIndicator.Position
+    local width  = terrainWidth  * 4
+    local height = terrainHeight * 4
+    local size   = brushSize * 4
+
+    -- FLATTEN
+    if flattenActive and flattenYSet then
+        local flatPos = Vector3.new(pos.X, flattenY, pos.Z)
+        local clearTop = Region3.new(
+            flatPos + Vector3.new(-width/2, 0, -width/2),
+            flatPos + Vector3.new(width/2, height+40, width/2)
+        )
+        clearTop = clearTop:ExpandToGrid(4)
+        Terrain:FillRegion(clearTop, 4, Enum.Material.Air)
+        Terrain:FillBlock(CFrame.new(flatPos - Vector3.new(0,2,0)), Vector3.new(width,4,width), selectedMaterial)
+        return
+    end
+
+    -- SMOOTH
+    if smoothActive then
+        local offsets = {Vector3.new(4,0,0),Vector3.new(-4,0,0),Vector3.new(0,0,4),Vector3.new(0,0,-4)}
+        for iter = 1, smoothStrength do
+            for _, offset in ipairs(offsets) do
+                local sPos = pos + offset * iter
+                Terrain:FillBall(sPos, 2*smoothStrength, Enum.Material.Air)
+                task.wait()
+                Terrain:FillBall(sPos, 1.5*smoothStrength, selectedMaterial)
+            end
+        end
+        return
+    end
+
+    -- DELETE
+    if deleteMode then
+        local region = Region3.new(
+            pos - Vector3.new(width/2,height/2,width/2),
+            pos + Vector3.new(width/2,height/2,width/2)
+        )
+        region = region:ExpandToGrid(4)
+        addToHistory({type="delete", position=pos, material=selectedMaterial, size=size})
+        Terrain:FillRegion(region, 4, Enum.Material.Air)
+        Terrain:FillBlock(CFrame.new(pos), Vector3.new(width,height,width), Enum.Material.Air)
+        removeFromLog(pos)
+    else
+        -- PLACE
+        addToHistory({type="place", position=pos, material=selectedMaterial, size=size})
+        if selectedTerrainShape == "ball" then
+            Terrain:FillBall(pos, math.max(width,height)/2, selectedMaterial)
+        elseif selectedTerrainShape == "cylinder" then
+            Terrain:FillCylinder(CFrame.new(pos), width/2, height, selectedMaterial)
+        elseif selectedTerrainShape == "wedge" then
+            Terrain:FillWedge(CFrame.new(pos), Vector3.new(width,height,width), selectedMaterial)
+        else
+            Terrain:FillBlock(CFrame.new(pos), Vector3.new(width,height,width), selectedMaterial)
+        end
+        logTerrain(pos, selectedMaterial, size, selectedTerrainShape)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- EXPORT KE PART 2 via getgenv()
+-- ═══════════════════════════════════════════════════════════════
+
+env.TE = {
+    C              = C,
+    materials      = materials,
+    blurFx         = blurFx,
+    brushIndicator = brushIndicator,
+    UI_LOGO_Y      = UI_LOGO_Y,
+    UI_PANEL_Y     = UI_PANEL_Y,
+    performUndo    = performUndo,
+    performRedo    = performRedo,
+    generateScript = generateTerrainScript,
+
+    getState = function()
+        return {
+            terrainEnabled       = terrainEnabled,
+            deleteMode           = deleteMode,
+            selectedMaterial     = selectedMaterial,
+            selectedTerrainShape = selectedTerrainShape,
+            terrainHeight        = terrainHeight,
+            terrainWidth         = terrainWidth,
+            brushSize            = brushSize,
+            flattenActive        = flattenActive,
+            flattenYSet          = flattenYSet,
+            flattenY             = flattenY,
+            smoothActive         = smoothActive,
+            smoothStrength       = smoothStrength,
+        }
+    end,
+
+    setState = function(key, val)
+        if     key == "terrainEnabled"       then terrainEnabled       = val
+        elseif key == "deleteMode"           then deleteMode           = val
+        elseif key == "selectedMaterial"     then selectedMaterial     = val
+        elseif key == "selectedTerrainShape" then selectedTerrainShape = val
+        elseif key == "terrainHeight"        then terrainHeight        = val
+        elseif key == "terrainWidth"         then terrainWidth         = val
+        elseif key == "brushSize"            then brushSize            = val
+        elseif key == "flattenActive"        then flattenActive        = val
+        elseif key == "flattenYSet"          then flattenYSet          = val
+        elseif key == "flattenY"             then flattenY             = val
+        elseif key == "smoothActive"         then smoothActive         = val
+        elseif key == "smoothStrength"       then smoothStrength       = val
+        elseif key == "isPlacing"            then isPlacing            = val
+        end
+    end,
+}
+
+env.TE_Ready = true
+
+-- ═══════════════════════════════════════════════════════════════
+-- UI SECTION (lanjutan)
+-- ═══════════════════════════════════════════════════════════════
+
+local function setState(k, v) env.TE.setState(k, v) end
+local function getState(k) return env.TE.getState()[k] end
+
+-- Local mirrors
+-- state vars sudah ada dari Part 1 di atas
+
+-- ═══════════════════════════════════════════════════════════════
+-- UI FACTORY
+-- ═══════════════════════════════════════════════════════════════
+
+local function corner(p, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 10)
+    c.Parent = p
+    return c
+end
+
+local function stroke(p, col, thick, trans)
+    local s = Instance.new("UIStroke")
+    s.Color = col or C.border
+    s.Thickness = thick or 1
+    s.Transparency = trans or 0
+    s.Parent = p
+    return s
+end
+
+local function padding(p, a)
+    local pd = Instance.new("UIPadding")
+    pd.PaddingTop    = UDim.new(0, a)
+    pd.PaddingRight  = UDim.new(0, a)
+    pd.PaddingBottom = UDim.new(0, a)
+    pd.PaddingLeft   = UDim.new(0, a)
+    pd.Parent = p
+end
+
+local function gradient(parent, c0, c1, rot)
+    local g = Instance.new("UIGradient")
+    g.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, c0),
+        ColorSequenceKeypoint.new(1, c1)
+    }
+    g.Rotation = rot or 90
+    g.Parent = parent
+end
+
+local function hoverTween(btn, hoverColor)
+    local base = btn.BackgroundColor3
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = hoverColor}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = base}):Play()
+    end)
+end
+
+local function flashBtn(btn, flashColor)
+    local base = btn.BackgroundColor3
+    TweenService:Create(btn, TweenInfo.new(0.08), {BackgroundColor3 = flashColor}):Play()
+    task.delay(0.15, function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = base}):Play()
+    end)
+end
+
+local function sectionLbl(parent, text, order)
+    local f = Instance.new("Frame")
+    f.LayoutOrder = order or 0
+    f.Size = UDim2.new(1, 0, 0, 22)
+    f.BackgroundTransparency = 1
+    f.Parent = parent
+
+    local line = Instance.new("Frame")
+    line.Size = UDim2.new(1, 0, 0, 1)
+    line.Position = UDim2.new(0, 0, 0.5, 0)
+    line.BackgroundColor3 = C.border
+    line.BorderSizePixel = 0
+    line.Parent = f
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0, 0, 1, 0)
+    lbl.AutomaticSize = Enum.AutomaticSize.X
+    lbl.Position = UDim2.new(0, 0, 0, 0)
+    lbl.BackgroundColor3 = C.bg_panel
+    lbl.BorderSizePixel = 0
+    lbl.Text = "  " .. text .. "  "
+    lbl.TextColor3 = C.gold
+    lbl.TextSize = 9
+    lbl.Font = Enum.Font.GothamBold
+    lbl.Parent = f
+    return f
+end
+
+local function makeValueRow(parent, labelText, iconText, defaultVal, minVal, maxVal, accentColor, order, onChange)
+    local rowCard = Instance.new("Frame")
+    rowCard.LayoutOrder = order
+    rowCard.Size = UDim2.new(1, 0, 0, 62)
+    rowCard.BackgroundColor3 = C.bg_card
+    rowCard.BorderSizePixel = 0
+    rowCard.Parent = parent
+    corner(rowCard, 14)
+    stroke(rowCard, C.border, 1, 0)
+
+    local iconLbl = Instance.new("TextLabel")
+    iconLbl.Size = UDim2.new(0, 28, 0, 28)
+    iconLbl.Position = UDim2.new(0, 10, 0, 6)
+    iconLbl.BackgroundColor3 = accentColor
+    iconLbl.BackgroundTransparency = 0.75
+    iconLbl.BorderSizePixel = 0
+    iconLbl.Text = iconText
+    iconLbl.TextSize = 16
+    iconLbl.Parent = rowCard
+    corner(iconLbl, 8)
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Size = UDim2.new(0, 80, 0, 14)
+    titleLbl.Position = UDim2.new(0, 10, 0, 36)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Text = labelText
+    titleLbl.TextColor3 = C.text_dim
+    titleLbl.TextSize = 8
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.Parent = rowCard
+
+    local mBtn = Instance.new("TextButton")
+    mBtn.Size = UDim2.new(0, 36, 0, 36)
+    mBtn.Position = UDim2.new(0, 100, 0.5, -18)
+    mBtn.BackgroundColor3 = C.bg_elevated
+    mBtn.BorderSizePixel = 0
+    mBtn.Text = "-"
+    mBtn.TextColor3 = accentColor
+    mBtn.TextSize = 22
+    mBtn.Font = Enum.Font.GothamBold
+    mBtn.AutoButtonColor = false
+    mBtn.Parent = rowCard
+    corner(mBtn, 18)
+    stroke(mBtn, accentColor, 1, 0.5)
+    hoverTween(mBtn, C.bg_deep)
+
+    local val = defaultVal
+    local valLbl = Instance.new("TextLabel")
+    valLbl.Size = UDim2.new(0, 48, 1, 0)
+    valLbl.Position = UDim2.new(0, 140, 0, 0)
+    valLbl.BackgroundTransparency = 1
+    valLbl.Text = tostring(val)
+    valLbl.TextColor3 = accentColor
+    valLbl.TextSize = 26
+    valLbl.Font = Enum.Font.GothamBold
+    valLbl.Parent = rowCard
+
+    local unitLbl = Instance.new("TextLabel")
+    unitLbl.Size = UDim2.new(0, 30, 0, 14)
+    unitLbl.Position = UDim2.new(0, 190, 1, -18)
+    unitLbl.BackgroundTransparency = 1
+    unitLbl.Text = "stud"
+    unitLbl.TextColor3 = C.text_dim
+    unitLbl.TextSize = 8
+    unitLbl.Font = Enum.Font.Gotham
+    unitLbl.Parent = rowCard
+
+    local pBtn = Instance.new("TextButton")
+    pBtn.Size = UDim2.new(0, 36, 0, 36)
+    pBtn.Position = UDim2.new(1, -44, 0.5, -18)
+    pBtn.BackgroundColor3 = C.bg_elevated
+    pBtn.BorderSizePixel = 0
+    pBtn.Text = "+"
+    pBtn.TextColor3 = accentColor
+    pBtn.TextSize = 22
+    pBtn.Font = Enum.Font.GothamBold
+    pBtn.AutoButtonColor = false
+    pBtn.Parent = rowCard
+    corner(pBtn, 18)
+    stroke(pBtn, accentColor, 1, 0.5)
+    hoverTween(pBtn, C.bg_deep)
+
+    local function bounce()
+        TweenService:Create(valLbl, TweenInfo.new(0.1, Enum.EasingStyle.Back), {TextSize = 32}):Play()
+        task.delay(0.12, function()
+            TweenService:Create(valLbl, TweenInfo.new(0.15), {TextSize = 26}):Play()
+        end)
+    end
+
+    mBtn.MouseButton1Click:Connect(function()
+        if val > minVal then val = val - 1; valLbl.Text = tostring(val); bounce(); onChange(val) end
+    end)
+    pBtn.MouseButton1Click:Connect(function()
+        if val < maxVal then val = val + 1; valLbl.Text = tostring(val); bounce(); onChange(val) end
+    end)
+
+    return rowCard
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- HAPUS GUI LAMA (Delta re-execute safety)
+-- ═══════════════════════════════════════════════════════════════
+
+local oldGui = player.PlayerGui:FindFirstChild("TerrainLebaranUI")
+if oldGui then oldGui:Destroy() end
+local oldSplash = player.PlayerGui:FindFirstChild("TerrainSplash")
+if oldSplash then oldSplash:Destroy() end
+local oldExport = player.PlayerGui:FindFirstChild("TerrainExport")
+if oldExport then oldExport:Destroy() end
+
+-- ═══════════════════════════════════════════════════════════════
+-- SCREEN GUI
+-- ═══════════════════════════════════════════════════════════════
+
+local mainGui = Instance.new("ScreenGui")
+mainGui.Name = "TerrainLebaranUI"
+mainGui.ResetOnSpawn = false
+mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+mainGui.Parent = player.PlayerGui
+
+-- ═══════════════════════════════════════════════════════════════
+-- LOGO BUTTON
+-- ═══════════════════════════════════════════════════════════════
+
+local logoBtn = Instance.new("TextButton")
+logoBtn.Size = UDim2.new(0, 58, 0, 58)
+logoBtn.Position = UDim2.new(0, 14, 0, UI_LOGO_Y)
+logoBtn.BackgroundColor3 = C.bg_card
+logoBtn.BorderSizePixel = 0
+logoBtn.Text = ""
+logoBtn.AutoButtonColor = false
+logoBtn.ZIndex = 10
+logoBtn.Parent = mainGui
+corner(logoBtn, 16)
+stroke(logoBtn, C.gold, 1.5, 0.2)
+gradient(logoBtn, C.bg_card, C.bg_elevated, 135)
+
+-- Gold ring
+local logoRing = Instance.new("Frame")
+logoRing.Size = UDim2.new(1, 14, 1, 14)
+logoRing.Position = UDim2.new(0, -7, 0, -7)
+logoRing.BackgroundTransparency = 1
+logoRing.ZIndex = 9
+logoRing.Parent = logoBtn
+corner(logoRing, 22)
+stroke(logoRing, C.gold, 1, 0.5)
+
+local logoEmoji = Instance.new("TextLabel")
+logoEmoji.Size = UDim2.new(1, 0, 0.6, 0)
+logoEmoji.Position = UDim2.new(0, 0, 0, 4)
+logoEmoji.BackgroundTransparency = 1
+logoEmoji.Text = "☪"
+logoEmoji.TextSize = 26
+logoEmoji.TextColor3 = C.gold
+logoEmoji.Font = Enum.Font.GothamBold
+logoEmoji.ZIndex = 11
+logoEmoji.Parent = logoBtn
+
+local logoSubLbl = Instance.new("TextLabel")
+logoSubLbl.Size = UDim2.new(1, 0, 0, 14)
+logoSubLbl.Position = UDim2.new(0, 0, 1, -16)
+logoSubLbl.BackgroundTransparency = 1
+logoSubLbl.Text = "TERRAIN"
+logoSubLbl.TextSize = 7
+logoSubLbl.TextColor3 = C.gold_dim
+logoSubLbl.Font = Enum.Font.GothamBold
+logoSubLbl.ZIndex = 11
+logoSubLbl.Parent = logoBtn
+
+logoBtn.MouseEnter:Connect(function()
+    TweenService:Create(logoBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.bg_elevated}):Play()
+    TweenService:Create(logoEmoji, TweenInfo.new(0.2), {TextColor3 = C.gold_bright}):Play()
+end)
+logoBtn.MouseLeave:Connect(function()
+    TweenService:Create(logoBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.bg_card}):Play()
+    TweenService:Create(logoEmoji, TweenInfo.new(0.2), {TextColor3 = C.gold}):Play()
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- MAIN PANEL
+-- ═══════════════════════════════════════════════════════════════
+
+local panelW = 248
+
+local mainPanel = Instance.new("Frame")
+mainPanel.Name = "MainPanel"
+mainPanel.Size = UDim2.new(0, panelW, 0.92, 0)
+mainPanel.Position = UDim2.new(0, 14, 0, UI_PANEL_Y)
+mainPanel.BackgroundColor3 = C.bg_panel
+mainPanel.BorderSizePixel = 0
+mainPanel.ClipsDescendants = true
+mainPanel.Visible = false
+mainPanel.Parent = mainGui
+corner(mainPanel, 20)
+stroke(mainPanel, C.border, 1, 0)
+
+-- Top accent bar gold → maroon
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(1, 0, 0, 4)
+topBar.BackgroundColor3 = C.gold
+topBar.BorderSizePixel = 0
+topBar.ZIndex = 3
+topBar.Parent = mainPanel
+corner(topBar, 2)
+gradient(topBar, C.gold, C.maroon, 90)
+
+-- Header
+local headerFrame = Instance.new("Frame")
+headerFrame.Size = UDim2.new(1, 0, 0, 52)
+headerFrame.Position = UDim2.new(0, 0, 0, 4)
+headerFrame.BackgroundTransparency = 1
+headerFrame.Parent = mainPanel
+
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Size = UDim2.new(0.65, 0, 1, 0)
+titleLbl.Position = UDim2.new(0, 14, 0, 0)
+titleLbl.BackgroundTransparency = 1
+titleLbl.Text = "☪ TERRAIN"
+titleLbl.TextColor3 = C.cream
+titleLbl.TextSize = 15
+titleLbl.Font = Enum.Font.GothamBold
+titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+titleLbl.Parent = headerFrame
+
+local verBadge = Instance.new("Frame")
+verBadge.Size = UDim2.new(0, 48, 0, 22)
+verBadge.Position = UDim2.new(1, -58, 0.5, -11)
+verBadge.BackgroundColor3 = C.maroon_dark
+verBadge.BorderSizePixel = 0
+verBadge.Parent = headerFrame
+corner(verBadge, 6)
+stroke(verBadge, C.gold, 1, 0.3)
+
+local verLbl = Instance.new("TextLabel")
+verLbl.Size = UDim2.new(1, 0, 1, 0)
+verLbl.BackgroundTransparency = 1
+verLbl.Text = "v12"
+verLbl.TextColor3 = C.gold
+verLbl.TextSize = 10
+verLbl.Font = Enum.Font.GothamBold
+verLbl.Parent = verBadge
+
+local div = Instance.new("Frame")
+div.Size = UDim2.new(1, -28, 0, 1)
+div.Position = UDim2.new(0, 14, 0, 56)
+div.BackgroundColor3 = C.border
+div.BorderSizePixel = 0
+div.Parent = mainPanel
+
+-- ═══════════════════════════════════════════════════════════════
+-- SCROLL
+-- ═══════════════════════════════════════════════════════════════
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -110)
+scroll.Position = UDim2.new(0, 0, 0, 60)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 3
+scroll.ScrollBarImageColor3 = C.gold
+scroll.ScrollBarImageTransparency = 0.4
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.Parent = mainPanel
+padding(scroll, 12)
+
+local listL = Instance.new("UIListLayout")
+listL.SortOrder = Enum.SortOrder.LayoutOrder
+listL.Padding = UDim.new(0, 10)
+listL.Parent = scroll
+
+-- ═══════════════════════════════════════════════════════════════
+-- TERRAIN SHAPE
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "TERRAIN SHAPE", -3)
+
+local terrainShapes = {
+    {name="Block",    id="block",    icon="🟫"},
+    {name="Ball",     id="ball",     icon="🔵"},
+    {name="Cylinder", id="cylinder", icon="🟤"},
+    {name="Wedge",    id="wedge",    icon="🔺"},
+    {name="Ramp",     id="ramp",     icon="📐"},
+    {name="Pyramid",  id="pyramid",  icon="🔷"},
+}
+
+local shapeGridTerrain = Instance.new("Frame")
+shapeGridTerrain.LayoutOrder = -2
+shapeGridTerrain.Size = UDim2.new(1, 0, 0, 0)
+shapeGridTerrain.AutomaticSize = Enum.AutomaticSize.Y
+shapeGridTerrain.BackgroundTransparency = 1
+shapeGridTerrain.Parent = scroll
+
+local shapeGridL = Instance.new("UIGridLayout")
+shapeGridL.CellSize = UDim2.new(0, 68, 0, 68)
+shapeGridL.CellPadding = UDim2.new(0, 6, 0, 6)
+shapeGridL.SortOrder = Enum.SortOrder.LayoutOrder
+shapeGridL.Parent = shapeGridTerrain
+
+local selectedTerrainShapeBtn = nil
+
+for i, ts in ipairs(terrainShapes) do
+    local tsCard = Instance.new("TextButton")
+    tsCard.BackgroundColor3 = C.bg_card
+    tsCard.BorderSizePixel = 0
+    tsCard.Text = ""
+    tsCard.AutoButtonColor = false
+    tsCard.ClipsDescendants = true
+    tsCard.Parent = shapeGridTerrain
+    corner(tsCard, 14)
+    local tsStroke = stroke(tsCard, C.border, 1, 0)
+
+    local tsTopBar = Instance.new("Frame")
+    tsTopBar.Size = UDim2.new(1, 0, 0, 20)
+    tsTopBar.BackgroundColor3 = C.maroon
+    tsTopBar.BorderSizePixel = 0
+    tsTopBar.Parent = tsCard
+    corner(tsTopBar, 4)
+    gradient(tsTopBar, C.gold_dim, C.maroon, 90)
+
+    local tsIcon = Instance.new("TextLabel")
+    tsIcon.Size = UDim2.new(1, 0, 0, 28)
+    tsIcon.Position = UDim2.new(0, 0, 0, 21)
+    tsIcon.BackgroundTransparency = 1
+    tsIcon.Text = ts.icon
+    tsIcon.TextSize = 20
+    tsIcon.Parent = tsCard
+
+    local tsName = Instance.new("TextLabel")
+    tsName.Size = UDim2.new(1, -4, 0, 13)
+    tsName.Position = UDim2.new(0, 2, 1, -15)
+    tsName.BackgroundTransparency = 1
+    tsName.Text = ts.name
+    tsName.TextColor3 = C.text_mid
+    tsName.TextSize = 8
+    tsName.Font = Enum.Font.Gotham
+    tsName.TextTruncate = Enum.TextTruncate.AtEnd
+    tsName.Parent = tsCard
+
+    local tsRing = Instance.new("Frame")
+    tsRing.Name = "Ring"
+    tsRing.Size = UDim2.new(1, 6, 1, 6)
+    tsRing.Position = UDim2.new(0, -3, 0, -3)
+    tsRing.BackgroundTransparency = 1
+    tsRing.ZIndex = 0
+    tsRing.Visible = false
+    tsRing.Parent = tsCard
+    corner(tsRing, 16)
+    stroke(tsRing, C.gold, 2, 0)
+
+    tsCard.MouseEnter:Connect(function()
+        if tsRing.Visible then return end
+        TweenService:Create(tsStroke, TweenInfo.new(0.15), {Color = C.gold}):Play()
+        TweenService:Create(tsCard, TweenInfo.new(0.15), {BackgroundColor3 = C.bg_elevated}):Play()
+    end)
+    tsCard.MouseLeave:Connect(function()
+        if tsRing.Visible then return end
+        TweenService:Create(tsStroke, TweenInfo.new(0.15), {Color = C.border}):Play()
+        TweenService:Create(tsCard, TweenInfo.new(0.15), {BackgroundColor3 = C.bg_card}):Play()
+    end)
+    tsCard.MouseButton1Click:Connect(function()
+        selectedTerrainShape = ts.id
+        setState("selectedTerrainShape", ts.id)
+        if selectedTerrainShapeBtn then
+            local pr = selectedTerrainShapeBtn:FindFirstChild("Ring")
+            if pr then pr.Visible = false end
+            TweenService:Create(selectedTerrainShapeBtn, TweenInfo.new(0.15), {BackgroundColor3 = C.bg_card}):Play()
+        end
+        tsRing.Visible = true
+        TweenService:Create(tsCard, TweenInfo.new(0.15), {BackgroundColor3 = C.bg_elevated}):Play()
+        selectedTerrainShapeBtn = tsCard
+    end)
+    if i == 1 then
+        tsRing.Visible = true
+        tsCard.BackgroundColor3 = C.bg_elevated
+        selectedTerrainShapeBtn = tsCard
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- PREVIEW BAR
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "MATERIAL", -1)
+
+local previewBar = Instance.new("Frame")
+previewBar.LayoutOrder = 0
+previewBar.Size = UDim2.new(1, 0, 0, 50)
+previewBar.BackgroundColor3 = C.bg_card
+previewBar.BorderSizePixel = 0
+previewBar.Parent = scroll
+corner(previewBar, 14)
+stroke(previewBar, C.gold, 1, 0.4)
+gradient(previewBar, C.bg_card, C.bg_elevated, 135)
+
+local previewIcon = Instance.new("TextLabel")
+previewIcon.Size = UDim2.new(0, 40, 1, 0)
+previewIcon.Position = UDim2.new(0, 8, 0, 0)
+previewIcon.BackgroundTransparency = 1
+previewIcon.Text = "🌿"
+previewIcon.TextSize = 26
+previewIcon.Parent = previewBar
+
+local previewName = Instance.new("TextLabel")
+previewName.Size = UDim2.new(1, -100, 0, 20)
+previewName.Position = UDim2.new(0, 52, 0, 6)
+previewName.BackgroundTransparency = 1
+previewName.Text = "Grass"
+previewName.TextColor3 = C.cream
+previewName.TextSize = 14
+previewName.Font = Enum.Font.GothamBold
+previewName.TextXAlignment = Enum.TextXAlignment.Left
+previewName.Parent = previewBar
+
+local previewSub = Instance.new("TextLabel")
+previewSub.Size = UDim2.new(1, -100, 0, 14)
+previewSub.Position = UDim2.new(0, 52, 0, 26)
+previewSub.BackgroundTransparency = 1
+previewSub.Text = "Selected Material"
+previewSub.TextColor3 = C.text_dim
+previewSub.TextSize = 9
+previewSub.Font = Enum.Font.Gotham
+previewSub.TextXAlignment = Enum.TextXAlignment.Left
+previewSub.Parent = previewBar
+
+local previewSwatch = Instance.new("Frame")
+previewSwatch.Size = UDim2.new(0, 8, 0.7, 0)
+previewSwatch.Position = UDim2.new(1, -18, 0.15, 0)
+previewSwatch.BackgroundColor3 = Color3.fromRGB(72,160,64)
+previewSwatch.BorderSizePixel = 0
+previewSwatch.Parent = previewBar
+corner(previewSwatch, 4)
+
+-- ═══════════════════════════════════════════════════════════════
+-- MATERIALS GRID
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "PILIH MATERIAL", 1)
+
+local matGrid = Instance.new("Frame")
+matGrid.LayoutOrder = 2
+matGrid.Size = UDim2.new(1, 0, 0, 0)
+matGrid.AutomaticSize = Enum.AutomaticSize.Y
+matGrid.BackgroundTransparency = 1
+matGrid.Parent = scroll
+
+local matGridL = Instance.new("UIGridLayout")
+matGridL.CellSize = UDim2.new(0, 68, 0, 68)
+matGridL.CellPadding = UDim2.new(0, 6, 0, 6)
+matGridL.SortOrder = Enum.SortOrder.LayoutOrder
+matGridL.Parent = matGrid
+
+local selectedMatBtn = nil
+
+for i, mat in ipairs(materials) do
+    local card = Instance.new("TextButton")
+    card.BackgroundColor3 = C.bg_card
+    card.BorderSizePixel = 0
+    card.Text = ""
+    card.AutoButtonColor = false
+    card.ClipsDescendants = true
+    card.Parent = matGrid
+    corner(card, 14)
+    local cardStroke = stroke(card, C.border, 1, 0)
+
+    local swatch = Instance.new("Frame")
+    swatch.Size = UDim2.new(1, 0, 0, 22)
+    swatch.BackgroundColor3 = mat.color
+    swatch.BorderSizePixel = 0
+    swatch.Parent = card
+    corner(swatch, 4)
+
+    local swatchShine = Instance.new("UIGradient")
+    swatchShine.Transparency = NumberSequence.new{
+        NumberSequenceKeypoint.new(0, 0.0),
+        NumberSequenceKeypoint.new(1, 0.5),
+    }
+    swatchShine.Parent = swatch
+
+    local iconL = Instance.new("TextLabel")
+    iconL.Size = UDim2.new(1, 0, 0, 28)
+    iconL.Position = UDim2.new(0, 0, 0, 22)
+    iconL.BackgroundTransparency = 1
+    iconL.Text = mat.icon
+    iconL.TextSize = 20
+    iconL.Parent = card
+
+    local nameL = Instance.new("TextLabel")
+    nameL.Size = UDim2.new(1, -4, 0, 13)
+    nameL.Position = UDim2.new(0, 2, 1, -15)
+    nameL.BackgroundTransparency = 1
+    nameL.Text = mat.name
+    nameL.TextColor3 = C.text_mid
+    nameL.TextSize = 8
+    nameL.Font = Enum.Font.Gotham
+    nameL.TextTruncate = Enum.TextTruncate.AtEnd
+    nameL.Parent = card
+
+    local ring = Instance.new("Frame")
+    ring.Name = "Ring"
+    ring.Size = UDim2.new(1, 6, 1, 6)
+    ring.Position = UDim2.new(0, -3, 0, -3)
+    ring.BackgroundTransparency = 1
+    ring.ZIndex = 0
+    ring.Visible = false
+    ring.Parent = card
+    corner(ring, 16)
+    stroke(ring, C.gold, 2, 0)
+
+    card.MouseEnter:Connect(function()
+        if ring.Visible then return end
+        TweenService:Create(cardStroke, TweenInfo.new(0.15), {Color = C.gold}):Play()
+        TweenService:Create(card, TweenInfo.new(0.15), {BackgroundColor3 = C.bg_elevated}):Play()
+    end)
+    card.MouseLeave:Connect(function()
+        if ring.Visible then return end
+        TweenService:Create(cardStroke, TweenInfo.new(0.15), {Color = C.border}):Play()
+        TweenService:Create(card, TweenInfo.new(0.15), {BackgroundColor3 = C.bg_card}):Play()
+    end)
+    card.MouseButton1Click:Connect(function()
+        setState("selectedMaterial", mat.enum)
+        previewIcon.Text = mat.icon
+        previewName.Text = mat.name
+        TweenService:Create(previewSwatch, TweenInfo.new(0.3), {BackgroundColor3 = mat.color}):Play()
+        if selectedMatBtn then
+            local pr = selectedMatBtn:FindFirstChild("Ring")
+            if pr then pr.Visible = false end
+            TweenService:Create(selectedMatBtn, TweenInfo.new(0.15), {BackgroundColor3 = C.bg_card}):Play()
+        end
+        ring.Visible = true
+        TweenService:Create(card, TweenInfo.new(0.15), {BackgroundColor3 = C.bg_elevated}):Play()
+        selectedMatBtn = card
+    end)
+    if i == 1 then
+        ring.Visible = true
+        card.BackgroundColor3 = C.bg_elevated
+        selectedMatBtn = card
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- BRUSH SIZE
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "BRUSH SIZE", 3)
+
+local brushCard = Instance.new("Frame")
+brushCard.LayoutOrder = 4
+brushCard.Size = UDim2.new(1, 0, 0, 60)
+brushCard.BackgroundColor3 = C.bg_card
+brushCard.BorderSizePixel = 0
+brushCard.Parent = scroll
+corner(brushCard, 14)
+stroke(brushCard, C.border, 1, 0)
+
+local minusBtn = Instance.new("TextButton")
+minusBtn.Size = UDim2.new(0, 44, 0, 44)
+minusBtn.Position = UDim2.new(0, 8, 0.5, -22)
+minusBtn.BackgroundColor3 = C.bg_elevated
+minusBtn.BorderSizePixel = 0
+minusBtn.Text = "-"
+minusBtn.TextColor3 = C.maroon_bright
+minusBtn.TextSize = 26
+minusBtn.Font = Enum.Font.GothamBold
+minusBtn.AutoButtonColor = false
+minusBtn.Parent = brushCard
+corner(minusBtn, 22)
+stroke(minusBtn, C.maroon, 1, 0.4)
+hoverTween(minusBtn, C.bg_deep)
+
+local sizeLbl = Instance.new("TextLabel")
+sizeLbl.Size = UDim2.new(1, -108, 1, 0)
+sizeLbl.Position = UDim2.new(0, 56, 0, 0)
+sizeLbl.BackgroundTransparency = 1
+sizeLbl.Text = "4"
+sizeLbl.TextColor3 = C.gold
+sizeLbl.TextSize = 32
+sizeLbl.Font = Enum.Font.GothamBold
+sizeLbl.Parent = brushCard
+
+local plusBtn = Instance.new("TextButton")
+plusBtn.Size = UDim2.new(0, 44, 0, 44)
+plusBtn.Position = UDim2.new(1, -52, 0.5, -22)
+plusBtn.BackgroundColor3 = C.bg_elevated
+plusBtn.BorderSizePixel = 0
+plusBtn.Text = "+"
+plusBtn.TextColor3 = C.gold
+plusBtn.TextSize = 26
+plusBtn.Font = Enum.Font.GothamBold
+plusBtn.AutoButtonColor = false
+plusBtn.Parent = brushCard
+corner(plusBtn, 22)
+stroke(plusBtn, C.gold, 1, 0.4)
+hoverTween(plusBtn, C.bg_deep)
+
+minusBtn.MouseButton1Click:Connect(function()
+    local cur = getState("brushSize")
+    if cur > 1 then
+        setState("brushSize", cur - 1)
+        sizeLbl.Text = tostring(cur - 1)
+        TweenService:Create(sizeLbl, TweenInfo.new(0.1, Enum.EasingStyle.Back), {TextSize = 38}):Play()
+        task.delay(0.12, function() TweenService:Create(sizeLbl, TweenInfo.new(0.15), {TextSize = 32}):Play() end)
+    end
+end)
+plusBtn.MouseButton1Click:Connect(function()
+    local cur = getState("brushSize")
+    if cur < 20 then
+        setState("brushSize", cur + 1)
+        sizeLbl.Text = tostring(cur + 1)
+        TweenService:Create(sizeLbl, TweenInfo.new(0.1, Enum.EasingStyle.Back), {TextSize = 38}):Play()
+        task.delay(0.12, function() TweenService:Create(sizeLbl, TweenInfo.new(0.15), {TextSize = 32}):Play() end)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- MODE TOGGLE (PLACE / DELETE)
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "MODE", 7)
+
+local modeCard = Instance.new("Frame")
+modeCard.LayoutOrder = 8
+modeCard.Size = UDim2.new(1, 0, 0, 52)
+modeCard.BackgroundColor3 = C.bg_card
+modeCard.BorderSizePixel = 0
+modeCard.Parent = scroll
+corner(modeCard, 14)
+stroke(modeCard, C.border, 1, 0)
+
+local modeLbl = Instance.new("TextLabel")
+modeLbl.Size = UDim2.new(1, -70, 1, 0)
+modeLbl.Position = UDim2.new(0, 14, 0, 0)
+modeLbl.BackgroundTransparency = 1
+modeLbl.Text = "✏  Place Mode"
+modeLbl.TextColor3 = C.cream
+modeLbl.TextSize = 13
+modeLbl.Font = Enum.Font.GothamBold
+modeLbl.TextXAlignment = Enum.TextXAlignment.Left
+modeLbl.Parent = modeCard
+
+local toggleTrack = Instance.new("TextButton")
+toggleTrack.Size = UDim2.new(0, 48, 0, 26)
+toggleTrack.Position = UDim2.new(1, -60, 0.5, -13)
+toggleTrack.BackgroundColor3 = C.bg_elevated
+toggleTrack.BorderSizePixel = 0
+toggleTrack.Text = ""
+toggleTrack.AutoButtonColor = false
+toggleTrack.Parent = modeCard
+corner(toggleTrack, 13)
+stroke(toggleTrack, C.border_glow, 1, 0.3)
+
+local toggleThumb = Instance.new("Frame")
+toggleThumb.Size = UDim2.new(0, 20, 0, 20)
+toggleThumb.Position = UDim2.new(0, 3, 0.5, -10)
+toggleThumb.BackgroundColor3 = C.text_dim
+toggleThumb.BorderSizePixel = 0
+toggleThumb.Parent = toggleTrack
+corner(toggleThumb, 10)
+
+local toggleActive = false
+local function setToggle(active)
+    toggleActive = active
+    setState("deleteMode", active)
+    if active then
+        TweenService:Create(toggleThumb, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {
+            Position = UDim2.new(0, 25, 0.5, -10),
+            BackgroundColor3 = C.maroon_bright
+        }):Play()
+        TweenService:Create(toggleTrack, TweenInfo.new(0.25), {BackgroundColor3 = C.maroon_dark}):Play()
+        modeLbl.Text = "🗑  Delete Mode"
+        TweenService:Create(modeLbl, TweenInfo.new(0.2), {TextColor3 = C.maroon_bright}):Play()
+    else
+        TweenService:Create(toggleThumb, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {
+            Position = UDim2.new(0, 3, 0.5, -10),
+            BackgroundColor3 = C.text_dim
+        }):Play()
+        TweenService:Create(toggleTrack, TweenInfo.new(0.25), {BackgroundColor3 = C.bg_elevated}):Play()
+        modeLbl.Text = "✏  Place Mode"
+        TweenService:Create(modeLbl, TweenInfo.new(0.2), {TextColor3 = C.cream}):Play()
+    end
+end
+toggleTrack.MouseButton1Click:Connect(function() setToggle(not toggleActive) end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- PAINT TOGGLE
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "PAINT", 8)
+
+local paintCard = Instance.new("Frame")
+paintCard.LayoutOrder = 9
+paintCard.Size = UDim2.new(1, 0, 0, 64)
+paintCard.BackgroundColor3 = C.bg_card
+paintCard.BorderSizePixel = 0
+paintCard.Parent = scroll
+corner(paintCard, 14)
+local paintCardStroke = stroke(paintCard, C.border, 1, 0)
+gradient(paintCard, C.bg_card, C.bg_elevated, 135)
+
+-- Icon kiri
+local paintIconLbl = Instance.new("TextLabel")
+paintIconLbl.Size = UDim2.new(0, 36, 0, 36)
+paintIconLbl.Position = UDim2.new(0, 10, 0.5, -18)
+paintIconLbl.BackgroundColor3 = C.bg_elevated
+paintIconLbl.BackgroundTransparency = 0.4
+paintIconLbl.BorderSizePixel = 0
+paintIconLbl.Text = "🎨"
+paintIconLbl.TextSize = 20
+paintIconLbl.Parent = paintCard
+corner(paintIconLbl, 10)
+
+-- Label
+local paintLabel = Instance.new("TextLabel")
+paintLabel.Size = UDim2.new(0, 110, 0, 20)
+paintLabel.Position = UDim2.new(0, 54, 0.5, -20)
+paintLabel.BackgroundTransparency = 1
+paintLabel.Text = "PAINT MODE"
+paintLabel.TextColor3 = C.text_mid
+paintLabel.TextSize = 12
+paintLabel.Font = Enum.Font.GothamBold
+paintLabel.TextXAlignment = Enum.TextXAlignment.Left
+paintLabel.Parent = paintCard
+
+local paintSubLbl = Instance.new("TextLabel")
+paintSubLbl.Size = UDim2.new(0, 110, 0, 14)
+paintSubLbl.Position = UDim2.new(0, 54, 0.5, 2)
+paintSubLbl.BackgroundTransparency = 1
+paintSubLbl.Text = "Tap untuk place terrain"
+paintSubLbl.TextColor3 = C.text_dim
+paintSubLbl.TextSize = 9
+paintSubLbl.Font = Enum.Font.Gotham
+paintSubLbl.TextXAlignment = Enum.TextXAlignment.Left
+paintSubLbl.Parent = paintCard
+
+-- Toggle Switch
+local paintTrack = Instance.new("TextButton")
+paintTrack.Size = UDim2.new(0, 56, 0, 28)
+paintTrack.Position = UDim2.new(1, -68, 0.5, -14)
+paintTrack.BackgroundColor3 = C.bg_elevated
+paintTrack.BorderSizePixel = 0
+paintTrack.Text = ""
+paintTrack.AutoButtonColor = false
+paintTrack.Parent = paintCard
+corner(paintTrack, 14)
+local paintTrackStroke = stroke(paintTrack, C.border_glow, 1, 0.3)
+
+local paintThumb = Instance.new("Frame")
+paintThumb.Size = UDim2.new(0, 22, 0, 22)
+paintThumb.Position = UDim2.new(0, 3, 0.5, -11)
+paintThumb.BackgroundColor3 = C.text_dim
+paintThumb.BorderSizePixel = 0
+paintThumb.Parent = paintTrack
+corner(paintThumb, 11)
+
+-- Status label kecil di atas tombol
+local paintStatusLbl = Instance.new("TextLabel")
+paintStatusLbl.Size = UDim2.new(0, 56, 0, 14)
+paintStatusLbl.Position = UDim2.new(1, -68, 0, 6)
+paintStatusLbl.BackgroundTransparency = 1
+paintStatusLbl.Text = "OFF"
+paintStatusLbl.TextColor3 = C.text_dim
+paintStatusLbl.TextSize = 9
+paintStatusLbl.Font = Enum.Font.GothamBold
+paintStatusLbl.Parent = paintCard
+
+local paintActive = false  -- default OFF saat masuk game
+
+local function setPaint(active)
+    paintActive = active
+    setState("terrainEnabled", active)
+    if active then
+        -- Thumb slide kanan + warna gold
+        TweenService:Create(paintThumb, TweenInfo.new(0.28, Enum.EasingStyle.Quint), {
+            Position = UDim2.new(0, 31, 0.5, -11),
+            BackgroundColor3 = C.gold
+        }):Play()
+        TweenService:Create(paintTrack, TweenInfo.new(0.25), {
+            BackgroundColor3 = Color3.fromRGB(45, 32, 5)
+        }):Play()
+        TweenService:Create(paintTrackStroke, TweenInfo.new(0.25), {Color = C.gold}):Play()
+        TweenService:Create(paintCardStroke, TweenInfo.new(0.25), {Color = C.gold}):Play()
+        TweenService:Create(paintLabel, TweenInfo.new(0.2), {TextColor3 = C.gold}):Play()
+        TweenService:Create(paintIconLbl, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(45,32,5)}):Play()
+        paintSubLbl.Text = "Paint aktif! Tap layar"
+        TweenService:Create(paintSubLbl, TweenInfo.new(0.2), {TextColor3 = C.gold_dim}):Play()
+        paintStatusLbl.Text = "ON"
+        TweenService:Create(paintStatusLbl, TweenInfo.new(0.2), {TextColor3 = C.gold}):Play()
+    else
+        -- Thumb slide kiri + warna dim
+        TweenService:Create(paintThumb, TweenInfo.new(0.28, Enum.EasingStyle.Quint), {
+            Position = UDim2.new(0, 3, 0.5, -11),
+            BackgroundColor3 = C.text_dim
+        }):Play()
+        TweenService:Create(paintTrack, TweenInfo.new(0.25), {
+            BackgroundColor3 = C.bg_elevated
+        }):Play()
+        TweenService:Create(paintTrackStroke, TweenInfo.new(0.25), {Color = C.border_glow}):Play()
+        TweenService:Create(paintCardStroke, TweenInfo.new(0.25), {Color = C.border}):Play()
+        TweenService:Create(paintLabel, TweenInfo.new(0.2), {TextColor3 = C.text_mid}):Play()
+        TweenService:Create(paintIconLbl, TweenInfo.new(0.2), {BackgroundColor3 = C.bg_elevated}):Play()
+        paintSubLbl.Text = "Tap untuk place terrain"
+        TweenService:Create(paintSubLbl, TweenInfo.new(0.2), {TextColor3 = C.text_dim}):Play()
+        paintStatusLbl.Text = "OFF"
+        TweenService:Create(paintStatusLbl, TweenInfo.new(0.2), {TextColor3 = C.text_dim}):Play()
+    end
+end
+
+paintTrack.MouseButton1Click:Connect(function()
+    setPaint(not paintActive)
+end)
+
+-- Default: paint OFF saat pertama load
+setPaint(false)
+
+-- ═══════════════════════════════════════════════════════════════
+-- UNDO / REDO
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "HISTORY", 9)
+
+local undoRedoRow = Instance.new("Frame")
+undoRedoRow.LayoutOrder = 10
+undoRedoRow.Size = UDim2.new(1, 0, 0, 46)
+undoRedoRow.BackgroundTransparency = 1
+undoRedoRow.Parent = scroll
+
+local undoBtn = Instance.new("TextButton")
+undoBtn.Size = UDim2.new(0.5, -4, 1, 0)
+undoBtn.Position = UDim2.new(0, 0, 0, 0)
+undoBtn.BackgroundColor3 = C.maroon_dark
+undoBtn.BorderSizePixel = 0
+undoBtn.Text = "↩  UNDO"
+undoBtn.TextColor3 = C.cream_dim
+undoBtn.TextSize = 12
+undoBtn.Font = Enum.Font.GothamBold
+undoBtn.AutoButtonColor = false
+undoBtn.Parent = undoRedoRow
+corner(undoBtn, 23)
+stroke(undoBtn, C.maroon, 1, 0.3)
+hoverTween(undoBtn, C.bg_elevated)
+
+local redoBtn = Instance.new("TextButton")
+redoBtn.Size = UDim2.new(0.5, -4, 1, 0)
+redoBtn.Position = UDim2.new(0.5, 4, 0, 0)
+redoBtn.BackgroundColor3 = Color3.fromRGB(35, 25, 8)
+redoBtn.BorderSizePixel = 0
+redoBtn.Text = "REDO  ↪"
+redoBtn.TextColor3 = C.gold
+redoBtn.TextSize = 12
+redoBtn.Font = Enum.Font.GothamBold
+redoBtn.AutoButtonColor = false
+redoBtn.Parent = undoRedoRow
+corner(redoBtn, 23)
+stroke(redoBtn, C.gold, 1, 0.4)
+hoverTween(redoBtn, Color3.fromRGB(55, 40, 12))
+
+undoBtn.MouseButton1Click:Connect(function()
+    if performUndo() then flashBtn(undoBtn, C.bg_elevated) end
+end)
+redoBtn.MouseButton1Click:Connect(function()
+    if performRedo() then flashBtn(redoBtn, Color3.fromRGB(80, 60, 20)) end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- HEIGHT & WIDTH
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "HEIGHT & WIDTH", 11)
+
+makeValueRow(scroll, "KETINGGIAN ATAS", "↑", terrainHeight, 1, 20, C.gold, 12, function(v)
+    terrainHeight = v
+    setState("terrainHeight", v)
+end)
+
+makeValueRow(scroll, "LEBAR TERRAIN", "↔", terrainWidth, 1, 20, C.cream_dim, 13, function(v)
+    terrainWidth = v
+    setState("terrainWidth", v)
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- FLATTEN TOOL
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "FLATTEN TOOL", 14)
+
+local flattenCard = Instance.new("Frame")
+flattenCard.LayoutOrder = 15
+flattenCard.Size = UDim2.new(1, 0, 0, 110)
+flattenCard.BackgroundColor3 = C.bg_card
+flattenCard.BorderSizePixel = 0
+flattenCard.Parent = scroll
+corner(flattenCard, 14)
+stroke(flattenCard, C.border, 1, 0)
+
+local flattenInfoLbl = Instance.new("TextLabel")
+flattenInfoLbl.Size = UDim2.new(1, -16, 0, 28)
+flattenInfoLbl.Position = UDim2.new(0, 8, 0, 6)
+flattenInfoLbl.BackgroundTransparency = 1
+flattenInfoLbl.Text = "📏 Ratain terrain di area brush"
+flattenInfoLbl.TextColor3 = C.text_mid
+flattenInfoLbl.TextSize = 10
+flattenInfoLbl.Font = Enum.Font.Gotham
+flattenInfoLbl.TextXAlignment = Enum.TextXAlignment.Left
+flattenInfoLbl.TextWrapped = true
+flattenInfoLbl.Parent = flattenCard
+
+local flattenYCard = Instance.new("Frame")
+flattenYCard.Size = UDim2.new(1, -16, 0, 30)
+flattenYCard.Position = UDim2.new(0, 8, 0, 36)
+flattenYCard.BackgroundColor3 = C.bg_elevated
+flattenYCard.BorderSizePixel = 0
+flattenYCard.Parent = flattenCard
+corner(flattenYCard, 8)
+stroke(flattenYCard, C.border, 1, 0)
+
+local flattenYLbl = Instance.new("TextLabel")
+flattenYLbl.Size = UDim2.new(1, 0, 1, 0)
+flattenYLbl.BackgroundTransparency = 1
+flattenYLbl.Text = "Target Y: (belum di-set)"
+flattenYLbl.TextColor3 = C.text_dim
+flattenYLbl.TextSize = 10
+flattenYLbl.Font = Enum.Font.GothamBold
+flattenYLbl.Parent = flattenYCard
+
+local flattenBtnRow = Instance.new("Frame")
+flattenBtnRow.Size = UDim2.new(1, -16, 0, 32)
+flattenBtnRow.Position = UDim2.new(0, 8, 0, 72)
+flattenBtnRow.BackgroundTransparency = 1
+flattenBtnRow.Parent = flattenCard
+
+local flattenBtnL = Instance.new("UIListLayout")
+flattenBtnL.FillDirection = Enum.FillDirection.Horizontal
+flattenBtnL.Padding = UDim.new(0, 8)
+flattenBtnL.Parent = flattenBtnRow
+
+local setYBtn = Instance.new("TextButton")
+setYBtn.LayoutOrder = 1
+setYBtn.Size = UDim2.new(0.48, 0, 1, 0)
+setYBtn.BackgroundColor3 = C.maroon_dark
+setYBtn.BorderSizePixel = 0
+setYBtn.Text = "📍 SET Y"
+setYBtn.TextColor3 = C.cream
+setYBtn.TextSize = 9
+setYBtn.Font = Enum.Font.GothamBold
+setYBtn.AutoButtonColor = false
+setYBtn.Parent = flattenBtnRow
+corner(setYBtn, 10)
+stroke(setYBtn, C.maroon, 1, 0.3)
+hoverTween(setYBtn, C.bg_elevated)
+
+local flattenToggleBtn = Instance.new("TextButton")
+flattenToggleBtn.LayoutOrder = 2
+flattenToggleBtn.Size = UDim2.new(0.48, 0, 1, 0)
+flattenToggleBtn.BackgroundColor3 = C.bg_elevated
+flattenToggleBtn.BorderSizePixel = 0
+flattenToggleBtn.Text = "○ OFF"
+flattenToggleBtn.TextColor3 = C.text_dim
+flattenToggleBtn.TextSize = 9
+flattenToggleBtn.Font = Enum.Font.GothamBold
+flattenToggleBtn.AutoButtonColor = false
+flattenToggleBtn.Parent = flattenBtnRow
+corner(flattenToggleBtn, 10)
+local flatStk = stroke(flattenToggleBtn, C.border, 1, 0.3)
+
+setYBtn.MouseButton1Click:Connect(function()
+    if brushIndicator.Transparency < 1 then
+        flattenY = math.floor(brushIndicator.Position.Y / 4) * 4
+        flattenYSet = true
+        setState("flattenY", flattenY)
+        setState("flattenYSet", true)
+        flattenYLbl.Text = "Target Y: " .. tostring(flattenY)
+        TweenService:Create(flattenYLbl, TweenInfo.new(0.2), {TextColor3 = C.gold}):Play()
+        flashBtn(setYBtn, C.maroon)
+    end
+end)
+
+flattenToggleBtn.MouseButton1Click:Connect(function()
+    if not flattenYSet then
+        flattenYLbl.Text = "Set Y dulu!"
+        TweenService:Create(flattenYLbl, TweenInfo.new(0.2), {TextColor3 = C.maroon_bright}):Play()
+        task.delay(1.5, function()
+            flattenYLbl.Text = "Target Y: (belum di-set)"
+            TweenService:Create(flattenYLbl, TweenInfo.new(0.2), {TextColor3 = C.text_dim}):Play()
+        end)
+        return
+    end
+    flattenActive = not flattenActive
+    setState("flattenActive", flattenActive)
+    if flattenActive then
+        flattenToggleBtn.Text = "● ON"
+        TweenService:Create(flattenToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.maroon_dark, TextColor3 = C.gold}):Play()
+        TweenService:Create(flatStk, TweenInfo.new(0.2), {Color = C.gold}):Play()
+    else
+        flattenToggleBtn.Text = "○ OFF"
+        TweenService:Create(flattenToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.bg_elevated, TextColor3 = C.text_dim}):Play()
+        TweenService:Create(flatStk, TweenInfo.new(0.2), {Color = C.border}):Play()
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- SMOOTH TOOL
+-- ═══════════════════════════════════════════════════════════════
+
+sectionLbl(scroll, "SMOOTH TOOL", 16)
+
+local smoothCard = Instance.new("Frame")
+smoothCard.LayoutOrder = 17
+smoothCard.Size = UDim2.new(1, 0, 0, 110)
+smoothCard.BackgroundColor3 = C.bg_card
+smoothCard.BorderSizePixel = 0
+smoothCard.Parent = scroll
+corner(smoothCard, 14)
+stroke(smoothCard, C.border, 1, 0)
+
+local smoothInfoLbl = Instance.new("TextLabel")
+smoothInfoLbl.Size = UDim2.new(1, -16, 0, 28)
+smoothInfoLbl.Position = UDim2.new(0, 8, 0, 6)
+smoothInfoLbl.BackgroundTransparency = 1
+smoothInfoLbl.Text = "🌊 Halusin terrain yang kasar"
+smoothInfoLbl.TextColor3 = C.text_mid
+smoothInfoLbl.TextSize = 10
+smoothInfoLbl.Font = Enum.Font.Gotham
+smoothInfoLbl.TextXAlignment = Enum.TextXAlignment.Left
+smoothInfoLbl.Parent = smoothCard
+
+local smoothStrRow = Instance.new("Frame")
+smoothStrRow.Size = UDim2.new(1, -16, 0, 30)
+smoothStrRow.Position = UDim2.new(0, 8, 0, 36)
+smoothStrRow.BackgroundColor3 = C.bg_elevated
+smoothStrRow.BorderSizePixel = 0
+smoothStrRow.Parent = smoothCard
+corner(smoothStrRow, 8)
+stroke(smoothStrRow, C.border, 1, 0)
+
+local smMinBtn = Instance.new("TextButton")
+smMinBtn.Size = UDim2.new(0, 28, 1, -8)
+smMinBtn.Position = UDim2.new(0, 4, 0, 4)
+smMinBtn.BackgroundColor3 = C.bg_deep
+smMinBtn.BorderSizePixel = 0
+smMinBtn.Text = "-"
+smMinBtn.TextColor3 = C.gold
+smMinBtn.TextSize = 18
+smMinBtn.Font = Enum.Font.GothamBold
+smMinBtn.AutoButtonColor = false
+smMinBtn.Parent = smoothStrRow
+corner(smMinBtn, 6)
+hoverTween(smMinBtn, C.bg_card)
+
+local smStrLbl = Instance.new("TextLabel")
+smStrLbl.Size = UDim2.new(1, -80, 1, 0)
+smStrLbl.Position = UDim2.new(0, 36, 0, 0)
+smStrLbl.BackgroundTransparency = 1
+smStrLbl.Text = "Strength: 2 / 5"
+smStrLbl.TextColor3 = C.gold
+smStrLbl.TextSize = 10
+smStrLbl.Font = Enum.Font.GothamBold
+smStrLbl.TextXAlignment = Enum.TextXAlignment.Left
+smStrLbl.Parent = smoothStrRow
+
+local smPlusBtn = Instance.new("TextButton")
+smPlusBtn.Size = UDim2.new(0, 28, 1, -8)
+smPlusBtn.Position = UDim2.new(1, -32, 0, 4)
+smPlusBtn.BackgroundColor3 = C.bg_deep
+smPlusBtn.BorderSizePixel = 0
+smPlusBtn.Text = "+"
+smPlusBtn.TextColor3 = C.gold
+smPlusBtn.TextSize = 18
+smPlusBtn.Font = Enum.Font.GothamBold
+smPlusBtn.AutoButtonColor = false
+smPlusBtn.Parent = smoothStrRow
+corner(smPlusBtn, 6)
+hoverTween(smPlusBtn, C.bg_card)
+
+smMinBtn.MouseButton1Click:Connect(function()
+    if smoothStrength > 1 then
+        smoothStrength = smoothStrength - 1
+        setState("smoothStrength", smoothStrength)
+        smStrLbl.Text = "Strength: " .. smoothStrength .. " / 5"
+    end
+end)
+smPlusBtn.MouseButton1Click:Connect(function()
+    if smoothStrength < 5 then
+        smoothStrength = smoothStrength + 1
+        setState("smoothStrength", smoothStrength)
+        smStrLbl.Text = "Strength: " .. smoothStrength .. " / 5"
+    end
+end)
+
+local smoothToggleBtn = Instance.new("TextButton")
+smoothToggleBtn.Size = UDim2.new(1, -16, 0, 32)
+smoothToggleBtn.Position = UDim2.new(0, 8, 0, 72)
+smoothToggleBtn.BackgroundColor3 = C.bg_elevated
+smoothToggleBtn.BorderSizePixel = 0
+smoothToggleBtn.Text = "○ SMOOTH OFF"
+smoothToggleBtn.TextColor3 = C.text_dim
+smoothToggleBtn.TextSize = 11
+smoothToggleBtn.Font = Enum.Font.GothamBold
+smoothToggleBtn.AutoButtonColor = false
+smoothToggleBtn.Parent = smoothCard
+corner(smoothToggleBtn, 10)
+local smStk = stroke(smoothToggleBtn, C.border, 1, 0.3)
+
+smoothToggleBtn.MouseButton1Click:Connect(function()
+    smoothActive = not smoothActive
+    setState("smoothActive", smoothActive)
+    if smoothActive then
+        smoothToggleBtn.Text = "● SMOOTH ON"
+        TweenService:Create(smoothToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.maroon_dark, TextColor3 = C.gold}):Play()
+        TweenService:Create(smStk, TweenInfo.new(0.2), {Color = C.gold}):Play()
+    else
+        smoothToggleBtn.Text = "○ SMOOTH OFF"
+        TweenService:Create(smoothToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.bg_elevated, TextColor3 = C.text_dim}):Play()
+        TweenService:Create(smStk, TweenInfo.new(0.2), {Color = C.border}):Play()
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- BOTTOM BAR - EXPORT
+-- ═══════════════════════════════════════════════════════════════
+
+local bottomBar = Instance.new("Frame")
+bottomBar.Size = UDim2.new(1, 0, 0, 58)
+bottomBar.Position = UDim2.new(0, 0, 1, -58)
+bottomBar.BackgroundColor3 = C.bg_panel
+bottomBar.BorderSizePixel = 0
+bottomBar.ZIndex = 3
+bottomBar.Parent = mainPanel
+
+local bottomDiv = Instance.new("Frame")
+bottomDiv.Size = UDim2.new(1, -28, 0, 1)
+bottomDiv.Position = UDim2.new(0, 14, 0, 0)
+bottomDiv.BackgroundColor3 = C.border
+bottomDiv.BorderSizePixel = 0
+bottomDiv.Parent = bottomBar
+
+local exportBtn = Instance.new("TextButton")
+exportBtn.Size = UDim2.new(1, -28, 0, 40)
+exportBtn.Position = UDim2.new(0, 14, 0, 10)
+exportBtn.BackgroundColor3 = C.maroon
+exportBtn.BorderSizePixel = 0
+exportBtn.Text = "⚡  EXPORT SCRIPT"
+exportBtn.TextColor3 = C.cream
+exportBtn.TextSize = 13
+exportBtn.Font = Enum.Font.GothamBold
+exportBtn.AutoButtonColor = false
+exportBtn.ZIndex = 4
+exportBtn.Parent = bottomBar
+corner(exportBtn, 20)
+gradient(exportBtn, C.maroon, C.maroon_dark, 90)
+stroke(exportBtn, C.gold, 1, 0.5)
+
+exportBtn.MouseEnter:Connect(function()
+    TweenService:Create(exportBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.maroon_bright}):Play()
+end)
+exportBtn.MouseLeave:Connect(function()
+    TweenService:Create(exportBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.maroon}):Play()
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- EXPORT MODAL
+-- ═══════════════════════════════════════════════════════════════
+
+local exportGui = Instance.new("ScreenGui")
+exportGui.Name = "TerrainExport"
+exportGui.Enabled = false
+exportGui.ResetOnSpawn = false
+exportGui.Parent = player.PlayerGui
+
+local expOverlay = Instance.new("TextButton")
+expOverlay.Size = UDim2.new(1,0,1,0)
+expOverlay.BackgroundColor3 = Color3.new(0,0,0)
+expOverlay.BackgroundTransparency = 0.45
+expOverlay.BorderSizePixel = 0
+expOverlay.Text = ""
+expOverlay.AutoButtonColor = false
+expOverlay.Parent = exportGui
+
+local expModal = Instance.new("Frame")
+expModal.Size = UDim2.new(0, 680, 0, 580)
+expModal.Position = UDim2.new(0.5, -340, 0.5, -290)
+expModal.BackgroundColor3 = C.bg_panel
+expModal.BorderSizePixel = 0
+expModal.Parent = exportGui
+corner(expModal, 22)
+stroke(expModal, C.gold, 1.5, 0.2)
+
+local expAccent = Instance.new("Frame")
+expAccent.Size = UDim2.new(1, 0, 0, 4)
+expAccent.BackgroundColor3 = C.gold
+expAccent.BorderSizePixel = 0
+expAccent.Parent = expModal
+corner(expAccent, 2)
+gradient(expAccent, C.gold, C.maroon, 90)
+
+local expTitle = Instance.new("TextLabel")
+expTitle.Size = UDim2.new(1, -50, 0, 56)
+expTitle.Position = UDim2.new(0, 20, 0, 12)
+expTitle.BackgroundTransparency = 1
+expTitle.Text = "☪ EXPORT TERRAIN SCRIPT"
+expTitle.TextColor3 = C.cream
+expTitle.TextSize = 20
+expTitle.Font = Enum.Font.GothamBold
+expTitle.TextXAlignment = Enum.TextXAlignment.Left
+expTitle.Parent = expModal
+
+local expCloseX = Instance.new("TextButton")
+expCloseX.Size = UDim2.new(0, 34, 0, 34)
+expCloseX.Position = UDim2.new(1, -48, 0, 14)
+expCloseX.BackgroundColor3 = C.bg_elevated
+expCloseX.BorderSizePixel = 0
+expCloseX.Text = "X"
+expCloseX.TextColor3 = C.text_dim
+expCloseX.TextSize = 14
+expCloseX.Font = Enum.Font.GothamBold
+expCloseX.AutoButtonColor = false
+expCloseX.Parent = expModal
+corner(expCloseX, 10)
+hoverTween(expCloseX, C.maroon_dark)
+
+local codeBox = Instance.new("TextBox")
+codeBox.Size = UDim2.new(1,-40,0,380)
+codeBox.Position = UDim2.new(0,20,0,80)
+codeBox.BackgroundColor3 = C.bg_deep
+codeBox.BorderSizePixel = 0
+codeBox.TextColor3 = C.gold
+codeBox.TextSize = 12
+codeBox.Font = Enum.Font.Code
+codeBox.TextXAlignment = Enum.TextXAlignment.Left
+codeBox.TextYAlignment = Enum.TextYAlignment.Top
+codeBox.TextWrapped = true
+codeBox.ClearTextOnFocus = false
+codeBox.MultiLine = true
+codeBox.Text = ""
+codeBox.Parent = expModal
+corner(codeBox, 12)
+padding(codeBox, 10)
+stroke(codeBox, C.maroon, 1, 0.3)
+
+local expDiv = Instance.new("Frame")
+expDiv.Size = UDim2.new(1,-40,0,1)
+expDiv.Position = UDim2.new(0,20,0,68)
+expDiv.BackgroundColor3 = C.border
+expDiv.BorderSizePixel = 0
+expDiv.Parent = expModal
+
+local expBtnRow = Instance.new("Frame")
+expBtnRow.Size = UDim2.new(1,-40,0,44)
+expBtnRow.Position = UDim2.new(0,20,1,-58)
+expBtnRow.BackgroundTransparency = 1
+expBtnRow.Parent = expModal
+
+local expBtnL = Instance.new("UIListLayout")
+expBtnL.FillDirection = Enum.FillDirection.Horizontal
+expBtnL.SortOrder = Enum.SortOrder.LayoutOrder
+expBtnL.Padding = UDim.new(0, 10)
+expBtnL.Parent = expBtnRow
+
+local function makeExpBtn(text, bg, tc, order)
+    local b = Instance.new("TextButton")
+    b.LayoutOrder = order
+    b.Size = UDim2.new(0, 192, 1, 0)
+    b.BackgroundColor3 = bg
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = tc
+    b.TextSize = 13
+    b.Font = Enum.Font.GothamBold
+    b.AutoButtonColor = false
+    b.Parent = expBtnRow
+    corner(b, 22)
+    return b
+end
+
+local selAllBtn   = makeExpBtn("SELECT ALL",  C.maroon_dark, C.cream,    1)
+local tryCopyBtn  = makeExpBtn("COPY",        Color3.fromRGB(35,25,8),  C.gold,    2)
+local closeExpBtn = makeExpBtn("CLOSE",       C.bg_elevated, C.text_dim, 3)
+stroke(selAllBtn, C.maroon, 1, 0.3)
+stroke(tryCopyBtn, C.gold, 1, 0.4)
+stroke(closeExpBtn, C.border, 1, 0.3)
+hoverTween(selAllBtn, C.bg_elevated)
+hoverTween(tryCopyBtn, Color3.fromRGB(55,40,12))
+hoverTween(closeExpBtn, C.bg_card)
+
+local function closeExport()
+    TweenService:Create(expModal, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+        Size = UDim2.new(0,680,0,0),
+    }):Play()
+    TweenService:Create(blurFx, TweenInfo.new(0.25), {Size = 0}):Play()
+    task.delay(0.26, function()
+        exportGui.Enabled = false
+        expModal.Size = UDim2.new(0,680,0,580)
+    end)
+end
+
+exportBtn.MouseButton1Click:Connect(function()
+    local generated = generateTerrainScript()
+    codeBox.Text = generated
+    local charCount = #generated
+    if charCount >= 195000 then
+        expTitle.Text = "EXPORT - TERLALU BESAR!"
+        expTitle.TextColor3 = C.maroon_bright
+    else
+        expTitle.Text = "☪ EXPORT - " .. math.floor(charCount/1000) .. "k chars OK"
+        expTitle.TextColor3 = C.gold
+    end
+    exportGui.Enabled = true
+    expModal.Size = UDim2.new(0,680,0,0)
+    TweenService:Create(expModal, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0,680,0,580)
+    }):Play()
+    TweenService:Create(blurFx, TweenInfo.new(0.3), {Size = 10}):Play()
+end)
+
+selAllBtn.MouseButton1Click:Connect(function()
+    codeBox:CaptureFocus()
+    codeBox.CursorPosition = #codeBox.Text + 1
+    codeBox.SelectionStart = 1
+end)
+
+tryCopyBtn.MouseButton1Click:Connect(function()
+    local ok = pcall(function() setclipboard(codeBox.Text) end)
+    local orig = tryCopyBtn.Text
+    tryCopyBtn.Text = ok and "COPIED!" or "CTRL+C"
+    task.delay(1.5, function() tryCopyBtn.Text = orig end)
+end)
+
+closeExpBtn.MouseButton1Click:Connect(closeExport)
+expOverlay.MouseButton1Click:Connect(closeExport)
+expCloseX.MouseButton1Click:Connect(closeExport)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.Escape and exportGui.Enabled then closeExport() end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- SPLASH "terrain by Uwais"
+-- ═══════════════════════════════════════════════════════════════
+
+local splashGui = Instance.new("ScreenGui")
+splashGui.Name = "TerrainSplash"
+splashGui.ResetOnSpawn = false
+splashGui.Parent = player.PlayerGui
+
+local splashFrame = Instance.new("Frame")
+splashFrame.Size = UDim2.new(0, 300, 0, 72)
+splashFrame.Position = UDim2.new(0.5, -150, 0, -80)
+splashFrame.BackgroundColor3 = C.bg_card
+splashFrame.BackgroundTransparency = 1
+splashFrame.BorderSizePixel = 0
+splashFrame.Visible = false
+splashFrame.Parent = splashGui
+corner(splashFrame, 18)
+stroke(splashFrame, C.gold, 1.5, 0.1)
+gradient(splashFrame, C.bg_card, C.bg_elevated, 135)
+
+local splashAccent = Instance.new("Frame")
+splashAccent.Size = UDim2.new(0, 4, 0.7, 0)
+splashAccent.Position = UDim2.new(0, 10, 0.15, 0)
+splashAccent.BackgroundColor3 = C.gold
+splashAccent.BorderSizePixel = 0
+splashAccent.Parent = splashFrame
+corner(splashAccent, 2)
+gradient(splashAccent, C.gold, C.maroon, 90)
+
+local splashIcon = Instance.new("TextLabel")
+splashIcon.Size = UDim2.new(0, 44, 1, 0)
+splashIcon.Position = UDim2.new(0, 16, 0, 0)
+splashIcon.BackgroundTransparency = 1
+splashIcon.Text = "☪"
+splashIcon.TextSize = 30
+splashIcon.TextColor3 = C.gold
+splashIcon.TextTransparency = 1
+splashIcon.Parent = splashFrame
+
+local splashTitle = Instance.new("TextLabel")
+splashTitle.Size = UDim2.new(1, -70, 0, 30)
+splashTitle.Position = UDim2.new(0, 62, 0, 8)
+splashTitle.BackgroundTransparency = 1
+splashTitle.Text = "terrain by Uwais"
+splashTitle.TextColor3 = C.cream
+splashTitle.TextSize = 17
+splashTitle.Font = Enum.Font.GothamBold
+splashTitle.TextXAlignment = Enum.TextXAlignment.Left
+splashTitle.TextTransparency = 1
+splashTitle.Parent = splashFrame
+
+local splashSub = Instance.new("TextLabel")
+splashSub.Size = UDim2.new(1, -70, 0, 18)
+splashSub.Position = UDim2.new(0, 62, 0, 38)
+splashSub.BackgroundTransparency = 1
+splashSub.Text = "Lebaran Maroon  v12  Delta"
+splashSub.TextColor3 = C.gold
+splashSub.TextSize = 10
+splashSub.Font = Enum.Font.Gotham
+splashSub.TextXAlignment = Enum.TextXAlignment.Left
+splashSub.TextTransparency = 1
+splashSub.Parent = splashFrame
+
+local function showSplash()
+    splashFrame.Visible = true
+    splashFrame.Position = UDim2.new(0.5, -150, 0, -80)
+    splashFrame.BackgroundTransparency = 1
+    splashTitle.TextTransparency = 1
+    splashSub.TextTransparency = 1
+    splashIcon.TextTransparency = 1
+
+    TweenService:Create(splashFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0.5, -150, 0, 20),
+        BackgroundTransparency = 0.1
+    }):Play()
+    TweenService:Create(splashTitle, TweenInfo.new(0.4), {TextTransparency = 0}):Play()
+    TweenService:Create(splashSub, TweenInfo.new(0.4), {TextTransparency = 0}):Play()
+    TweenService:Create(splashIcon, TweenInfo.new(0.4), {TextTransparency = 0}):Play()
+
+    task.delay(2.5, function()
+        TweenService:Create(splashFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+            Position = UDim2.new(0.5, -150, 0, -80),
+            BackgroundTransparency = 1
+        }):Play()
+        TweenService:Create(splashTitle, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+        TweenService:Create(splashSub, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+        TweenService:Create(splashIcon, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+        task.delay(0.41, function() splashFrame.Visible = false end)
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- LOGO TOGGLE PANEL
+-- ═══════════════════════════════════════════════════════════════
+
+local panelOpen = false
+
+logoBtn.MouseButton1Click:Connect(function()
+    panelOpen = not panelOpen
+    if panelOpen then
+        showSplash()
+        mainPanel.Visible = true
+        mainPanel.Position = UDim2.new(0, -panelW - 20, 0, UI_PANEL_Y)
+        TweenService:Create(mainPanel, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            Position = UDim2.new(0, 14, 0, UI_PANEL_Y)
+        }):Play()
+        TweenService:Create(blurFx, TweenInfo.new(0.3), {Size = 4}):Play()
+        TweenService:Create(logoEmoji, TweenInfo.new(0.2), {Rotation = 15}):Play()
+    else
+        TweenService:Create(mainPanel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+            Position = UDim2.new(0, -panelW - 20, 0, UI_PANEL_Y)
+        }):Play()
+        TweenService:Create(blurFx, TweenInfo.new(0.3), {Size = 0}):Play()
+        TweenService:Create(logoEmoji, TweenInfo.new(0.2), {Rotation = 0}):Play()
+        task.delay(0.31, function() mainPanel.Visible = false end)
+    end
+end)
+
+print("╔═══════════════════════════════════════════════╗")
+print("║  TERRAIN LEBARAN - FULL VERSION LOADED ✅     ║")
+print("║  Terrain Editor siap! Tap ☪ untuk buka       ║")
+print("╚═══════════════════════════════════════════════╝")
